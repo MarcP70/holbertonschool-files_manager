@@ -1,30 +1,29 @@
+import sha1 from 'sha1';
 import { v4 as uuidv4 } from 'uuid';
-import { createHash } from 'crypto';
 import dbClient from '../utils/db';
 import redisClient from '../utils/redis';
 
 class AuthController {
   static async getConnect(req, res) {
-    const authHeader = req.header('Authorization');
-    if (!authHeader || !authHeader.startsWith('Basic ')) {
+    const b64auth = (req.headers.authorization || '').split(' ')[1] || '';
+    if (!b64auth) {
       return res.status(401).json({ error: 'Unauthorized' });
     }
 
-    const base64Credentials = authHeader.split(' ')[1];
-   
-    let credentials;
-    try {
-      credentials = Buffer.from(base64Credentials, 'base64').toString('ascii');
-    } catch (err) {
+    const auth = Buffer.from(b64auth, 'base64').toString('utf-8');
+    const email = auth.split(':')[0] || '';
+    const password = auth.split(':')[1];
+    if (!password || !email) {
       return res.status(401).json({ error: 'Unauthorized' });
     }
+    const hashedPassword = sha1(password);
 
-    const [email, password] = credentials.split(':');
-
-    const hashedPassword = createHash('sha1').update(password).digest('hex');
-    const user = await dbClient.db.collection('users').findOne({ email, password: hashedPassword });
-
+    const usersCollection = dbClient.db.collection('users');
+    const user = await usersCollection.findOne({ email });
     if (!user) {
+      return res.status(401).json({ error: 'Unauthorized' });
+    }
+    if (user.password !== hashedPassword) {
       return res.status(401).json({ error: 'Unauthorized' });
     }
 
